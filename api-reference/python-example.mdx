@@ -1,0 +1,270 @@
+---
+title: Python Example
+description: 'Get your forecasts with less lines of code than ever. Step-by-step guide. To the fucking moon 🚀🌙'
+---
+
+### API AUTHENTICATION
+
+The ``API-KEY`` grants access to the ``Forecaster`` services. To obtain this credential, we can request it at the developers portal (available at ``https://dev-predictor-apim.developer.azure-api.net``).
+
+```python API_KEY = "<<INTRODUCE YOUR API_KEY HERE>>"
+
+headers = {
+    'Ocp-Apim-Subscription-Key': API_KEY
+}
+```
+
+### DATA LOADING + MINIMAL ETL
+
+Load the files from the local storage.
+
+```python import pandas as pd
+
+df = pd.read_parquet('Makridakis_Training.parquet')
+```
+
+Before feeding the data to the ``engine``, we must ensure it meets the bare minimum requirements:
+
+> It seems some series don't have the ``time`` field properly filled, which would cause the ``forecaster`` to break down. Thus, we must fix this before proceeding.
+
+> Moreover, some series have different termination dates. Since this is not allowed, we must shift the series to a common termination date.
+
+> We'll also ``resample`` the series to monthly frequency, though this is not compulsory and can be handled by the engine (it would suffice to pass an additional ``frequency`` argument in the configuration file we'll make later), but doing it here will allow us to skip the ``preprocessing`` function altogether, which is often convenient.
+
+``` python def minimal_etl_to_forecaster(df):
+
+    nans = df.groupby('series_id').apply(lambda x: x.isna().sum())
+    nans = nans[nans['timestamp'] > 0].index.tolist()
+    df = df[~ df['series_id'].isin(nans)]
+
+    current_date = pd.Timestamp(day = 18, month = 9, year = 2023)
+
+    def shift_to_common_termination_date(series):
+        series['timestamp'] = series['timestamp'] - series['timestamp'].max() + current_date
+        return series
+
+    df = df.groupby('series_id', group_keys = False).apply(shift_to_common_termination_date)
+    df = df.groupby('series_id', group_keys = True).resample('MS', on = 'timestamp').sum(numeric_only = True).reset_index()
+
+    return df
+
+df = minimal_etl_to_forecaster(df)
+```
+
+### UPLOAD FILES
+
+Once the ``table`` is ready to go, the only missing piece is the configuration ``json``, which we'll load in from local storage (we might as well just write it as a ``python`` ``dictionary``).
+
+>    time_column_name -> "timestamp"<br>
+>    label_column_name -> "value"<br>
+>    ids_column_name -> "series_id"<br>
+>    univariate -> false<br>
+>    covariates -> false<br>
+>    frequency -> "MS"
+
+Then, both files must be fed to the ``upload`` endpoint (``https://dev-predictor-apim.azure-api.net/forecaster-v2/upload-files``) with a ``post`` request. Notice that we must also include the ``headers`` with the user's ``API-KEY`` for authentication. If succeeded, the request returns a dictionary with the ``id's`` assigned to the uploaded dataset. This ``id`` must be saved for later, when it will be required for the ``preprocessing`` and ``modelling`` & ``forecast`` functions.
+
+```python import requests
+from io import BytesIO
+
+url = "https://dev-predictor-apim.azure-api.net/forecaster-v2/upload-files"
+
+buffer_to_upload = {}
+
+buffer = BytesIO()
+df.to_parquet(buffer)
+buffer.seek(0)
+
+buffer_to_upload['labels_training_main'] = buffer
+buffer_to_upload['legend'] = open('Makridakis_Legend.json', 'rb')
+
+response = requests.post(url, files = buffer_to_upload, headers = headers)
+
+ids_parallel_run = response.json()
+```
+
+We can also upload multiple tables simultaneously by including them all in the ``files`` dictionary (in which case they should all be named beggining with ``labels_training``, just like the code above). This is often used to partition a big dataset into smaller chunks and upload them separately, which would immensely cut down runtimes in the ``modelling`` & ``forecast`` step, thanks to the engine's parallelization capabilities. Notice that the "smaller chunks" could also contain completely unrelated time series, in which case the engine's parallelization capabilities can be used to solve different forecasting problems simultaneously.
+
+### PREPROCESSING
+
+Though optional, the ``preprocessing`` step is often convenient because: 1) it grants us relevant insight about the ``time`` ``series`` in our dataset and 2) it transforms the ``time`` ``series`` for better modelling and more precise forecasts. Notice that this step is only compulsory if the uploaded dataset did not meet the bare minimum requirements (which is not our case). A poorly formatted dataset would be one for which at least one of the following holds: 1) the date field is of type ``string`` instead of ``datetime``, 2) the sampling frequency is not consistent or 3) there are missing values in the ``label`` field.
+
+In this example we will only use two ``preprocessing`` functions: 1) ``WhiteNoiseTest``, which measures the ``signal-to-noise`` ratio and 2) ``StationariryTest``, which tests whether the time series are ``stationary`` (that is, their behaviour does not change over time). Notice that these functions do not carry out a transformation of the ``time`` ``series``, but only gather statistical information (which could be useful later). We also include the ``id`` returned by the ``upload`` call as a parameter, so that the engine knows which dataset we want to perform the ``preprocessing`` on.
+
+A request is then made to the preprocessing endpoint: ``https://dev-predictor-apim.azure-api.net/forecaster-v2/launch-preprocessing``, including the user's ``API-KEY`` in the ``header``. The function returns an ``id`` which (uniquely) identifies the ``job``. Notice that this ``id`` is different to the one assigned to the dataset when uploaded in the first step (moreover, the user can make multiple ``preprocessing`` calls upon the same dataset, each of which would return a new ``id``). From now on, we will refer to this ``id`` as the ``job`` ``id``.
+
+```python import requests
+
+url = "https://dev-predictor-apim.azure-api.net/forecaster-v2/launch-preprocessing"
+
+params = {
+    'ids_parallel_run': ids_parallel_run['ids'],
+    'transformers': "WhiteNoiseTest-StationarityTest"
+}
+
+response = requests.post(url, json = params, headers = headers)
+```
+
+Now we'll use the ``get-output`` function to retrieve the ``job``'s results: ``https://dev-predictor-apim.azure-api.net/forecaster-v2/get-output``. The only paramater needed for this function is the ``job`` ``id``, which was assigned in the previous step. Now, this endpoint returns either the results requested or a placeholder message indicating that the job (whose results we wish to retrieve) is yet to finish. Notice the latter will always be the case if one runs this cell immediately after the previous one, since there would have not been enough time for the preprocessing job (or any job for that matter) to finish.
+
+```python import requests
+
+url = "https://dev-predictor-apim.azure-api.net/forecaster-v2/get-output"
+
+params = {
+    'ids_parallel_run': response.json()
+}
+
+preprocessing_results = requests.post(url, json = params, headers = headers)
+preprocessing_results = preprocessing_results.json()
+
+out = preprocessing_results
+```
+
+Now we can freely explore the preprocessing summary. Here we'll have a look at:
+
+> 1) The number of series present in the dataset
+> 2) The series marked as ``noisy``
+> 3) The series marked as ``non-stationary``
+
+Notice that the summary will include a new entry for every ``transformer`` in the ``preprocessing`` call. The summary contains other relevant information and ``metadata`` which the user can freely review.
+
+```python out['_main']['preprocessing_summary']['summary_main']['dataset_summary']['number_of_series']
+```
+```python out['_main']['preprocessing_summary']['summary_main']['transformers_info']['white-noise-test']['noisy'][:8]
+```
+```python out['_main']['preprocessing_summary']['summary_main']['transformers_info']['stationarity-test']['non-stationary'][:8]
+```
+
+### TRAINING & FORECASTING
+
+Now it's time for the ``modelling`` & ``forecasting``. The engine offers a wide variety of forecasting models / algorithms, though in this example we'll only try the five following: ``LightGBM``, ``LinearRegression``, ``NBEATS``, ``AutoCES`` and ``Ultima``. We will forecast one year into the future, for which we set ``forecast_horizon = 12``. Moreover, since we properly formatted the dataset before uploading it, we don't need to rely on the preprocessed one (and could have even avoided that function altogether), so we might as well set ``use_unproc_dataset = True``. Notice that if we set ``use_unproc_dataset = False`` then the preprocessing function should have been called at least once, or an error will rise. If we were only interested in evaluating the models (and not the actual forecast, yet) we could set ``refit_and_forecast = False`` to reduce the computing time. Likewise, if we were only interested in the forecast itself and not the models' evaluation, we could set ``straight_to_forecast = True`` (though this would not work with the ``Ultima`` algorithm, of which the evaluation is an intrinsic part).
+
+Now we'll make a request to the ``modelling`` & ``forecast`` endpoint: ``https://dev-predictor-apim.azure-api.net/forecaster-v2/launch-forecasting``, including the user's ``API-KEY`` in the ``header``. The function returns an ``id`` which uniquely identifies the ``job``.
+
+For further reading, here are the chosen algorithms in a nutshell:
+
+> LightGBM is a tree-based & grandient-boosting model. It's very robust against overfitting and performs well in many different problems, including highly non-linear problems. In this example, we will use it as a ``global`` ``model``, which means that all series in the dataset will share the same model (that is, there is only one model instance, which is trained on all available series). Notice that this is the default configuration for this model, so we do not need to specify it (elsewise, we would need to set ``global_model = True``). Global models are the best option when individual series are not long enough to properly fit the targeted model. Another bonus is the fast training, since there's only one model shared by all series. We will use a ``window_size`` of 36 months (that is, three years), which defines the model's input time-window. We could also set ``calendar_features = True`` to include time-features in the model's input (namely, the month of the year could be useful as a feature to train the model with). We also set ``n_estimators = 128``. Notice that the only compulsory parameter here is the ``window_size``, but fine-tuning the model's is always better.
+
+> LinearRegression is plain old ... linear regression ``y = A*X + b``. Here, ``y`` is the series' future values and ``X`` is the past time window defined by the ``window_size`` parameter. The model will also be fitted as a global model (``global_model = True``, default behaviour) with hyperparameter(s) optimization (``hyperparameters = True`` and ``hyperparameters_timeout = 10``). Notice that ``window_size`` is the only hyperparameter to be optimized in a linear regression model.
+
+> NBEATS is a neural-network-based model. It's great for capturing complex patterns in the data and it's flexibility allows for both past and static covariates. Then again, we will use a global model configuration and a time-window of three years. However, for this model we will not include time features, in order to prevent overfitting to yearly patterns (not that this is the definitive configuration for this model, here we are just exploring the multiple possibilities of the engine). Finally, we set ``max_training_time = 20`` and ``n_epochs = 512`` for an adequate training time.
+
+> AutoCES is an univariate and statistical time series model. It's name stands for ``Complex`` ``Exponential`` ``Smoothing`` (an evolution of the classic ``Exponential`` ``Smoothing``) and can capture more complex patterns in the data thanks to its superior flexibility. This algorithm will fit an unique model for every time series in the dataset. This might result in comparatively greater training times (compared to the global model variation). We set ``model = Z`` so that the algorithm figures out the best model configuration for each time series. We set ``season_length = 12`` to target the yearly season patterns.
+
+> Ultima is a fine-tuned forecasting algorithm which encompasses many statistical models: ``ARIMA``, ``ETS``, ``CES``, ``Theta``, ``MSTL``, ``IMAPA``, ``SeasonalNaive`` and ``HistoricAverage``. All models (and with multiple configurations, in some cases) are fitted to each time series, which results in expensive training, specially with the option ``lightweight = False`` (which would resort to even heavier models). The models are then compared using cross-validation (in this example, one fold will be enough, so we set ``n_cross_validations = 1``) and the best-performing model for every time series is selected. This results in a very precise algorithm, even in heterogeneous datasets, albeit with some overfitting as a consequence of the model selection (that is, bias to the validation points). We set ``season_length = 12`` to target the yearly seasonal patterns, though only some models in the algorithm are designed to capture these patterns. Notice that we could also specify a lower-frequency seasonality for the ``MSTL`` model using the ``season_length_lower`` parameter.
+
+```python import requests
+
+url = "https://dev-predictor-apim.azure-api.net/forecaster-v2/launch-forecasting"
+
+params = {
+    'ids_parallel_run': ids_parallel_run['ids'],
+    'models': "Ultima-AutoCES-LightGBM-LinearRegression-NBEATS",
+    'forecast_horizon': 12,
+    'models_parameters': {
+        'Ultima': {
+            'season_length': 12
+        },
+        'AutoCES': {
+            'season_length': 12,
+            'model': 'Z'
+        },
+        'LightGBM': {
+            'window_size': 36,
+            'n_estimators': 128
+        },
+        'LinearRegression': {
+            'hyperparameters': True,
+            'hyperparameters_timeout': 10
+        },
+        'NBEATS': {
+            'window_size': 36,
+            'max_training_time': 20,
+            'n_epochs': 512
+        }
+    }
+}
+
+response = requests.post(url, json = params, headers = headers)
+```
+
+We'll use the ``get-output`` function to retrieve the job's results. This is actually the same endpoint we used in the ``preprocessing`` step, the only difference being the ``job`` ``id`` specified in the request. This ``id`` identifies the job whose results we wish to retrieve, which can be a ``preprocessing`` job or a ``modelling`` & ``forecasting`` job. We have wrapped the function's call inside a ``while`` loop, so that the endpoint is called iteratively every minute until the job finishes, which will take around 20 minutes for this particular example. This is convenient because it saves us the chore of repeatedly doing the requests ourselves.
+
+This function's endpoint is: ``https://dev-predictor-apim.azure-api.net/forecaster-v2/get-output``.
+
+```python import requests
+import time
+
+url = "https://dev-predictor-apim.azure-api.net/forecaster-v2/get-output"
+
+params = {
+    'ids_parallel_run': response.json(),
+    'melt_forecast': True
+}
+
+finished = False
+
+while not finished:
+
+    finished = True
+    forecasting_results = requests.post(url, json = params, headers = headers)
+    forecasting_results = forecasting_results.json()
+
+    for out in forecasting_results.values():
+        if 'ETA' in out.get('e', ''):
+            finished = False
+    
+    if not finished: time.sleep(60)
+
+out = forecasting_results
+```
+
+Now we can freely explore the ``training`` ``summary`` returned by the ``get-output`` function. This is a brief report with relevant information about job: the ``(hyper)parameters`` used by the algorithm(s), the time taken to ``fit`` the model(s), the ``performance`` ``metrics`` measured on the validation set, the ``forecast(s)``, ... On a side note, most of this summary would not be available had we set ``straight_to_forecast = True`` in the ``modelling`` & ``forecasting`` call, since the evaluation step would have been skipped (in exchange of faster runtime). We can retrieve the forecast(s) from the summary by ``DataFrame(out['forecast'])`` or ``DataFrame(out['_main']['forecast'])`` for the partition-wise forecast. Notice that when two or more algorithms are launched, the forecast is produced by the best-performing of the lot.
+
+Here we'll have a look at:
+
+> 1) The training time of every model
+> 2) The validation metrics of every model
+> 3) The forecast(s) of the M20 series
+
+We conclude that the ``Ultima`` algorithm performed the best, as measured on the validation set, though it was also the quite expensive (judging by the training time).
+
+```python out['_main']['training_summary']['time_to_fit_seconds']
+```
+```python out['_main']['training_summary']['fit_results']
+```
+```python forecast = pd.DataFrame(out['forecast'])
+forecast[forecast['series_id'] == 'M20']
+```
+
+Finally, we can download the validation graphs. In these images we get a glimpse of the model(s) performance on ``unseen`` data (data on which the model hasn't been trained). These graphs show the model's forecast against their true values and should be a good representation of the models' actual performance on a production environment. Notice that only eight series (randomly chosen) are plotted. Notice that this function will return nothing if ``straight_to_forecast`` was set to ``True`` in the training step.
+
+The function's endpoint is: ``https://dev-predictor-apim.azure-api.net/forecaster-v2/get-validation-plot``.
+
+At first glance, we see that ``NBEATS`` and ``LightGBM`` perform better than ``LinearRegression`` and ``AutoCES``. We also see that some series' seasonal patterns are captured by the ``Ultima`` algorithm. Either way, we don't recommend choosing the definitive model guided solely by these images. Instead, we should also compare the metrics in the training summary (such as the ``validation`` ``error`` and the ``training`` ``time``) to properly judge the models' performance and choose the most adequate algorithm.
+
+```python import requests
+
+url = "https://dev-predictor-apim.azure-api.net/forecaster-v2/get-validation-plot"
+
+params = {
+    'id': ids_parallel_run['ids']['_main'],
+    'run_id': out['_main']['training_summary']['run_id']
+}
+
+response_validation_plot = requests.post(url, params = params, headers = headers)
+```
+
+```python import io
+import zipfile
+from IPython.display import Image, display
+
+zip_ref = zipfile.ZipFile(io.BytesIO(response_validation_plot.content), 'r')
+
+for image in zip_ref.namelist():
+
+    png_file = zip_ref.open(image)
+    print(image.split('.')[1])
+    display(Image(png_file.read(), width = 1024))
+```
