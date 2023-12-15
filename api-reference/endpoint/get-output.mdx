@@ -1,4 +1,18 @@
 ---
-title: 'Create Plant'
-openapi: 'POST /plants'
+title: 'Get Job Output Plant'
+openapi: 'POST /get-output'
 ---
+
+### GET OUTPUT
+
+Retrieves the result from the preprocessing or modelling / forecasting job(s).
+
+**IN** - \{*key1* : ``job1_id``, *key2* : ``job2_id``, ...\} - Job(s) ID(s)
+
+**OUT** - Dictionary containing the job’s report / summary:
+- ``preprocessing_summary`` –  Dataset description, transformers report and more
+- ``training_summary`` – Training time, evaluation metrics and more
+- ``forecast`` – The series’ forecast(s)
+- ``melt_forecast`` – Whether to retrieve the forecast's table in long or short format
+
+

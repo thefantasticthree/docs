@@ -43,9 +43,6 @@
     {
       "group": "Endpoints",
       "pages": [
-        "api-reference/endpoint/get",
-        "api-reference/endpoint/create",
-        "api-reference/endpoint/delete",
         "api-reference/endpoint/upload-files",
         "api-reference/endpoint/launch-preprocessing",
         "api-reference/endpoint/launch-forecasting",

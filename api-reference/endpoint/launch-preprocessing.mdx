@@ -1,4 +1,15 @@
 ---
-title: 'Create Plant'
-openapi: 'POST /plants'
+title: 'Launch Preprocessing Jobs'
+openapi: 'POST /launch-preprocessing'
 ---
+
+### LAUNCH PREPROCESSING
+
+Applies the preprocessing function to the uploaded series. This step is optional and can be skipped if the uploaded files already match the engine's requirements.  A collection of additional transformers and operations can be applied to the series.
+
+**IN** - Dictionary containing the following keys:
+- ``ids_parallel_run`` – Dataset(s) ID(s) – \{*key1* : *id1*, *key2* : *id2*, ...\}
+- ``transformers`` – Transformers to apply
+- ``resampling_frequency`` – If any, frequency to resample the series to
+
+**OUT** - \{*key1* : ``job1_id``, *key2* : ``job2_id``, ...\} - Job(s) IDs

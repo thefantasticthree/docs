@@ -1,4 +1,16 @@
 ---
-title: 'Create Plant'
-openapi: 'POST /plants'
+title: 'Upload Files'
+openapi: 'POST /upload-files'
 ---
+
+### UPLOAD FILES
+
+Uploads files to the engine's storage.
+
+**IN** - Files to upload:
+- ``labels_training`` – Series to be forecasted (in parquet or csv format). Two or more files of this type can be uploaded (they should be named differently, but all beginning with *labels_training*).
+- ``legend`` – Description of the uploaded dataset (in json format).
+- ``covariates_training`` (optional) – Additional variables to train the model with (in parquet or csv format).
+- ``covariates_forecast`` (optional) – Variables' future values to use in the inference step (in parquet or csv format).
+
+**OUT** - \{``ids_header``: *ids_header*, ``ids``: \{*key1* : *id1*, *key2* : *id2*, ...\}\} - Unique id(s) assigned to the uploaded files (one for each uploaded file of type ``labels_training``).

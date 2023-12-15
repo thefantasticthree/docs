@@ -1,4 +1,14 @@
 ---
-title: 'Create Plant'
-openapi: 'POST /plants'
+title: 'Get Validation Plot'
+openapi: 'POST /get-validation-plot'
 ---
+
+### DOWNLOAD VALIDATION PLOT
+
+Downloads validation plot(s) for easier evaluation of the algorithm's performance.
+
+**IN** - Parameters:
+- ``id`` – Dataset ID
+- ``run_id`` – Storage ID of the modelling job (returned in the ``get-output`` function)
+
+**OUT** - File (zip format) with the validation plots (images in png format, one for each algorithm ran).

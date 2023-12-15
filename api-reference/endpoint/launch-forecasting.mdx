@@ -1,4 +1,23 @@
 ---
-title: 'Create Plant'
-openapi: 'POST /plants'
+title: 'Launch Forecasting Job'
+openapi: 'POST /launch-forecasting-job'
 ---
+
+### LAUNCH FORECASTING
+
+Launches the modelling / forecasting job. The engine offers a wide variety of forecasting models / algorithms, each of which can be fine-tuned by the user or launched with the default configuration. On top of these, the additional flags in the funciton's input grant the user further flexibility.
+
+**IN** - Dictionary containing the following keys:
+- ``ids_parallel_run`` – Dataset(s) ID(s) – \{*key1* : *id1*, *key2* : *id2*, ...\}
+- ``refit_and_forecast`` – Refit champion model with all available data and 
+use it to forecast the label series
+- ``straight_to_forecast`` – Skip the models’ evaluation step and jump 
+straight to forecasting
+- ``use_unproc_dataset`` – Use the unprocessed dataset(s) for training
+- ``filter_out_noisy_series`` – Drop noisy series before fitting the model(s)
+- ``models`` – Models to fit
+- ``forecast_horizon`` – Number of periods to be forecasted onto the future
+- ``n_cross_validations`` – Number of cross-validation-folds for evaluation
+- ``models_parameters`` – Optionally, (hyper)parameters for the models (must be dict-like)
+
+**OUT** - \{*key1* : ``job1_id``, *key2* : ``job2_id``, ...\} - Job(s) ID(s)
