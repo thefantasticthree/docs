@@ -1,33 +1,32 @@
 ---
-title: 'Introduction'
-description: 'Example section for showcasing API endpoints'
+title: Time Series Forecasting
+description: 'Accurate predictions with zero lines of code. Powered by state of the art algorithms and leading experts in the field. Fast ⚡ accurate 🎯 and easy 🦥.'
 ---
 
 <Note>
-  If you're not looking to build API reference documentation, you can delete
-  this section by removing the api-reference folder.
+  The user guide can be downloaded at ``https://dev-predictor-apim.developer.azure-api.net``.
 </Note>
 
-## Welcome
+## User guide
 
-There are two ways to build API documentation: [OpenAPI](https://mintlify.com/docs/api-playground/openapi/setup) and [MDX components](https://mintlify.com/docs/api-playground/mdx/configuration). For the starter kit, we are using the following OpenAPI specification.
+Pray to god that this works 🙏🏻
 
 <Card
-  title="Plant Store Endpoints"
-  icon="leaf"
-  href="https://github.com/mintlify/starter/blob/main/api-reference/openapi.json"
+  title="Useless link to absolutely nowhere!"
+  icon="magnifying-glass-chart"
+  href="https://docs.python-requests.org/en/latest/index.html"
 >
-  View the OpenAPI specification file
+  Requests is an elegant and simple HTTP library for Python, built for human beings.
 </Card>
 
 ## Authentication
 
-All API endpoints are authenticated using Bearer tokens and picked up from the specification file.
+All API endpoints are authenticated using Bearer tokens and picked up from the specification file. To authenticate against the ``Predictor``'s API manager, use the following schema:
 
 ```json
-"security": [
+"headers": [
   {
-    "bearerAuth": []
+    "Ocp-Apim-Subscription-Key": <<YOUR API KEY>>
   }
 ]
 ```
