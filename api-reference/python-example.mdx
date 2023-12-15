@@ -55,3 +55,37 @@ df = minimal_etl_to_forecaster(df)
 ```
 
 ### UPLOAD FILES
+
+Once the ``table`` is ready to go, the only missing piece is the configuration ``json``, which we'll load in from local storage (we might as well just write it as a ``python`` ``dictionary``).
+
+>    time_column_name -> "timestamp"<br>
+>    label_column_name -> "value"<br>
+>    ids_column_name -> "series_id"<br>
+>    univariate -> false<br>
+>    covariates -> false<br>
+>    frequency -> "MS"
+
+Then, both files must be fed to the ``upload`` endpoint (``https://dev-predictor-apim.azure-api.net/forecaster-v2/upload-files``) with a ``post`` request. Notice that we must also include the ``headers`` with the user's ``API-KEY`` for authentication. If succeeded, the request returns a dictionary with the ``id's`` assigned to the uploaded dataset. This ``id`` must be saved for later, when it will be required for the ``preprocessing`` and ``modelling`` & ``forecast`` functions.
+
+```python
+import requests
+from io import BytesIO
+
+url = "https://dev-predictor-apim.azure-api.net/forecaster-v2/upload-files"
+
+buffer_to_upload = {}
+
+buffer = BytesIO()
+df.to_parquet(buffer)
+buffer.seek(0)
+
+buffer_to_upload['labels_training_main'] = buffer
+buffer_to_upload['legend'] = open('Makridakis_Legend.json', 'rb')
+
+response = requests.post(url, files = buffer_to_upload, headers = headers)
+
+ids_parallel_run = response.json()
+```
+
+We can also upload multiple tables simultaneously by including them all in the ``files`` dictionary (in which case they should all be named beggining with ``labels_training``, just like the code above). This is often used to partition a big dataset into smaller chunks and upload them separately, which would immensely cut down runtimes in the ``modelling`` & ``forecast`` step, thanks to the engine's parallelization capabilities. Notice that the "smaller chunks" could also contain completely unrelated time series, in which case the engine's parallelization capabilities can be used to solve different forecasting problems simultaneously.
+
